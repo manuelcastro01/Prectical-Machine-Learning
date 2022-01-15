@@ -1,0 +1,115 @@
+---
+title: "Practical Machine Learning - CP"
+author: "Manuel Castro"
+date: "10/1/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Using R for Human Activity Recognition (HAR)
+
+### Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: <http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har> 
+
+In this project we will use Caret, Dplyr and rattle libraries.
+
+```{r echo=TRUE}
+library(caret)
+library(dplyr)
+library(rattle)
+```
+
+## Data Gathering
+
+As mentioned above, the train and test datasets were previously extracted, cleaned and uploaded for their use, thus we just need to upload it to our environment, in this case R (RStudio Desktop) but you can do it from GUI or RStudio Cloud.
+
+Note that datasets have ".csv" (comma separated value) extensions, so we use read.csv to reach them.
+
+```{r echo=FALSE}
+traindf <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+testdf <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+
+```
+
+## Data Manipulation - Exp. Data Analysis
+Lets' start evaluating predictors one by one in a simple rpart model, but you can use the machine learning classification algorithm you want, but taking into account the type of data you are working with. 
+
+Started by setting a seed for reproducibility and creating a function that returns a dataframe with the predictor and its average accuracy on the model.
+
+Dplyr was used to extract only tidy and numeric data.
+
+```{r echo=FALSE}
+
+#get all possible predictors
+testmodel <- function(){
+  
+  acc <- c()
+  predictor <- c()
+  
+  set.seed(0524)
+  
+  cols <- traindf %>%  select(where(~!any(is.na(.))))
+  cols <- names(select_if(cols, is.numeric))
+  
+  for (i in 1:length(cols)) {
+    
+    pred <- paste0("classe ~",cols[i])
+    
+    train.control <- trainControl(method = "repeatedcv",  number = 100, repeats = 1)
+    model <- train(as.formula(pred), data = traindf, method = "rpart" ,trControl = train.control)
+    predict(model, testdf)
+    acc <-append(acc, mean(model$results$Accuracy))
+    predictor <- append(predictor, cols[i])
+    #print(paste("Estimation: ",round(i*100/length(cols),2),"%"))
+  }
+  
+  return(data.frame(predictor, acc))
+
+}
+
+p <- testmodel()
+
+```
+
+Once we executed the function, we dataframe like this: 
+```{r }
+head(p %>% arrange(desc(acc)))
+```
+
+## Creating the model
+
+As you can see, the predictor with the highest accuracy are Raw_timestamp_part_1, X, and yaw_belt, but if you explore a little bit X variable you will see that is an Id, a unique variable used to identify a register and therefore in not useful for boosting.
+
+Now, taking into account that actual values of the test dataset are [B, A, B, A, A, E, D, B, A, A, B, C, B, A, E, E, A, B, B, B] one can evaluate the boosted model accuracy on the test dataset using Raw_timestamp_part_1 and yaw_belt as predictors.
+
+Note that train.control is used for model cross validation.
+```{r}
+train.control <- trainControl(method = "repeatedcv",  number = 10, repeats = 100)
+model <- train(classe ~ raw_timestamp_part_1 + yaw_belt , data = traindf, method = "rpart" ,trControl = train.control)
+predict(model, testdf)
+
+```
+## Evaluating the model
+
+As you can see, we have an accuracy of 100%, but having short number of testing values is not good for estimating the overall accuracy, or know if the model us under or overfitted.
+
+```{r }
+
+actual <- c("B", "A", "B", "A", "A", "E", "D", "B", "A", "A", "B", "C", "B", "A", "E", "E", "A", "B", "B", "B")
+predicted <- unlist(predict(model, testdf))
+table(predicted, actual)
+```
+
+If you want to see a the model in a graphical way, you can use *fancyRpartPlot(model$finalModel)* from the rattle library.
+```{r}
+fancyRpartPlot(model$finalModel)
+```
+
+
+
+
+
